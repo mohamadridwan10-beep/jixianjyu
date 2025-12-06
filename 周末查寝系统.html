@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>集贤智能查寝 Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+    <style>
+        body { 
+            touch-action: manipulation; 
+            -webkit-tap-highlight-color: transparent; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* 隐藏滚动条但保留功能 */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* 玻璃拟态效果 */
+        .glass {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+        }
+        
+        /* 数字专用字体 */
+        .font-mono-num { font-family: 'JetBrains Mono', monospace; }
+
+        .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 0.6rem; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden text-gray-800" x-data="attendanceApp()" x-init="initApp()">
+
+    <header class="glass z-50 shadow-sm relative shrink-0">
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500"></div>
+
+        <div class="px-4 pt-4 pb-2">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800 font-mono-num tracking-tight" x-text="currentTime">00:00:00</h1>
+                    <p class="text-xs text-gray-500 font-medium mt-1 uppercase tracking-wide" x-text="currentDate">LOADING...</p>
+                </div>
+                
+                <div class="flex flex-col items-end gap-2">
+                    <button @click="resetAllData()" class="bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-lg shadow-gray-300/50 active:scale-95 transition flex items-center gap-1">
+                        🔄 开启新一轮
+                    </button>
+                    <button @click="showHistory = true" class="text-blue-600 text-xs font-medium hover:underline">
+                        查看历史记录
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-4 flex gap-2 overflow-x-auto no-scrollbar pb-1">
+                <div class="bg-green-50 text-green-700 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border border-green-100 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-green-500"></span>
+                    留宿 <span x-text="stayingCount">0</span>
+                </div>
+                <div class="bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border border-blue-100 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                    回家 <span x-text="homeCount">0</span>
+                </div>
+                <div class="bg-red-50 text-red-700 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap border border-red-100 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-red-500"></span>
+                    异常 <span x-text="abnormalCount">0</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-2 flex border-t border-gray-100">
+            <button @click="activeTab = 'female'" 
+                class="flex-1 py-3 text-sm font-bold transition-all relative"
+                :class="activeTab === 'female' ? 'text-pink-600 bg-pink-50/50' : 'text-gray-400 hover:text-gray-600'">
+                👩 3楼女生
+                <div x-show="activeTab === 'female'" class="absolute bottom-0 left-0 w-full h-0.5 bg-pink-500"></div>
+            </button>
+            <button @click="activeTab = 'male'" 
+                class="flex-1 py-3 text-sm font-bold transition-all relative"
+                :class="activeTab === 'male' ? 'text-blue-600 bg-blue-50/50' : 'text-gray-400 hover:text-gray-600'">
+                👨 5楼男生
+                <div x-show="activeTab === 'male'" class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-500"></div>
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto p-3 space-y-4 bg-gray-50/50 pb-32">
+        <template x-for="room in activeList" :key="room.id">
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100/50">
+                <div class="flex justify-between items-center mb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xl font-bold text-gray-700 font-mono-num" x-text="room.id"></span>
+                        <span class="bg-gray-100 text-gray-500 text-[10px] px-1.5 py-0.5 rounded" x-text="room.students.length+'人'"></span>
+                    </div>
+                    <div class="flex gap-1.5">
+                        <button @click="clearRoom(room.id)" class="w-7 h-7 flex items-center justify-center rounded-lg bg-gray-100 text-gray-400 hover:bg-gray-200 active:bg-gray-300 transition" title="清除该宿舍状态">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                        <div class="w-px h-6 bg-gray-200 mx-1"></div>
+                        <button @click="markRoomStatus(room.id, 'home')" class="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-600 text-xs font-bold border border-blue-100 active:bg-blue-100">全回家</button>
+                        <button @click="markRoomStatus(room.id, 'present')" class="px-2.5 py-1 rounded-lg bg-green-50 text-green-600 text-xs font-bold border border-green-100 active:bg-green-100">全留宿</button>
+                    </div>
+                </div>
+                
+                <div class="card-grid">
+                    <template x-for="student in room.students" :key="student.name">
+                        <button 
+                            @click="toggleStatus(room.id, student.name)"
+                            class="relative aspect-square rounded-xl flex flex-col items-center justify-center p-1 transition-all duration-200 border-2 active:scale-90"
+                            :class="getStatusClass(student.status)"
+                        >
+                            <div class="w-1.5 h-1.5 rounded-full mb-1" :class="getDotClass(student.status)"></div>
+                            
+                            <span class="text-sm font-bold truncate w-full text-center leading-tight" x-text="formatName(student.name)"></span>
+                            <span class="text-[9px] mt-0.5 font-medium opacity-80 scale-90" x-text="getStatusLabel(student.status)"></span>
+                        </button>
+                    </template>
+                </div>
+            </div>
+        </template>
+        
+        <div class="h-8 text-center text-gray-300 text-xs pt-2">—— 到底了 ——</div>
+    </main>
+
+    <div class="fixed bottom-0 left-0 right-0 p-3 pb-6 bg-white/80 backdrop-blur-md border-t border-gray-200 z-40 flex gap-3 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <button @click="copyLeaderReport()" class="flex-1 bg-gray-800 text-white py-3 rounded-2xl font-bold shadow-xl active:scale-[0.98] transition flex flex-col items-center justify-center">
+            <span class="text-sm">📋 领导汇报</span>
+            <span class="text-[10px] text-gray-300 font-normal">生成统计数据</span>
+        </button>
+        <button @click="copyParentReport()" class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white py-3 rounded-2xl font-bold shadow-xl shadow-green-200 active:scale-[0.98] transition flex flex-col items-center justify-center">
+            <span class="text-sm">👨‍👩‍👧 家长公示</span>
+            <span class="text-[10px] text-green-100 font-normal">生成留宿名单</span>
+        </button>
+    </div>
+
+    <div x-show="showHistory" x-cloak class="fixed inset-0 z-[60] bg-black/30 backdrop-blur-sm transition-opacity" @click.self="showHistory = false">
+        <div class="absolute right-0 top-0 bottom-0 w-full max-w-sm bg-white shadow-2xl flex flex-col transform transition-transform duration-300"
+             x-transition:enter="translate-x-full" x-transition:enter-end="translate-x-0"
+             x-transition:leave="translate-x-0" x-transition:leave-end="translate-x-full">
+            <div class="p-5 border-b bg-gray-50 flex justify-between items-center">
+                <h2 class="font-bold text-xl text-gray-800">查寝档案</h2>
+                <button @click="showHistory = false" class="w-8 h-8 rounded-full bg-white text-gray-500 flex items-center justify-center shadow hover:bg-gray-100">&times;</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50/30">
+                <template x-if="history.length === 0">
+                    <div class="flex flex-col items-center justify-center h-40 text-gray-400">
+                        <span class="text-4xl mb-2">📂</span>
+                        <p class="text-sm">暂无历史记录</p>
+                    </div>
+                </template>
+                <template x-for="(record, index) in history" :key="index">
+                    <div class="bg-white p-4 rounded-xl border border-gray-100 shadow-sm relative group">
+                        <div class="flex justify-between items-end mb-2">
+                            <span class="text-sm font-bold text-gray-800" x-text="record.date"></span>
+                            <span class="text-xs text-gray-400 font-mono-num" x-text="record.time"></span>
+                        </div>
+                        <div class="p-2 bg-gray-50 rounded text-xs text-gray-600 leading-relaxed font-mono" x-text="record.report"></div>
+                        <button @click="deleteHistory(index)" class="absolute top-2 right-2 text-red-400 opacity-0 group-hover:opacity-100 transition p-1 hover:bg-red-50 rounded">🗑️</button>
+                    </div>
+                </template>
+            </div>
+            <div class="p-4 border-t bg-white">
+                <button @click="archiveData()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-blue-200 active:scale-95 transition">
+                    💾 保存当前记录到档案
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function attendanceApp() {
+            return {
+                activeTab: 'female',
+                showHistory: false,
+                currentTime: '00:00:00',
+                currentDate: '',
+                history: [],
+                statusData: {},
+                
+                // 数据源
+                dormData: {
+                    female: [
+                        { id: '301', students: ['蔡晓凤2','黄芷颍2'] },
+                        { id: '302', students: ['洪颖祯1','王涵1','陈欣玲1','阮彩岚1','郭冰艳1'] },
+                        { id: '304', students: ['潘婧莹1','吴晨微1','詹圣娜1','陈宝晶1','庄亦菲1','黄冰铃1'] },
+                        { id: '307', students: ['李珊2','王思璐2'] },
+                        { id: '309', students: ['郑馨潼2','王琴纹2','陈诗钰2','刘芳冰2','王静怡2','林绍彤2'] },
+                        { id: '310', students: ['傅宁静1','李思渔1','林茹颖1','刘燕敏1'] },
+                        { id: '311', students: ['赖木香1','张淑丽2','张琪涵2','戴烨1'] },
+                        { id: '313', students: ['黄燕如1','康瑜萱1','丘舒琴1','肖燕红1','余灿1','林钰婷1'] },
+                        { id: '314', students: ['陈姝涵2','曾如萍2','陈诗琪2','黄婉婷2','刘诗婷2'] },
+                        { id: '316', students: ['许思汝2','王梦琪2','苏铃艳2','林智玲2','杨冬莲2','王紫鑫2'] },
+                        { id: '318', students: ['林美心1','刘怡婷1','周皖乐1','王晓艺1'] },
+                        { id: '320', students: ['章恩琪2','曾雪凌2','庄安妮1','倪含曦2'] }
+                    ],
+                    male: [
+                        { id: '508', students: ['王贞越1','陈凯明1','曾毅1','林典泽1','吴桐宇1','吴炫杰1','张俊杰1'] },
+                        { id: '510', students: ['蔡逸鸿1','黄旭斌1','邹智淼1','陈书勇1','范昌茂1','庄江森2','林钰恒1'] },
+                        { id: '512', students: ['陈俊兴1','许煜豪1','陈海林1','吴永杰1','颜天旭2','石航2'] },
+                        { id: '514', students: ['刘俊豪2','陈子桢2','陈涛2','周昱杭2','杨译鹏2','江利彬2'] },
+                        { id: '516', students: ['魏凌云1','卢璟耀1','陈泓睿1','尤麒源2','钟舒航2','洪思鑫2'] }
+                    ]
+                },
+
+                initApp() {
+                    // 启动时钟
+                    this.updateTime();
+                    setInterval(() => this.updateTime(), 1000);
+
+                    // 读取历史
+                    const savedHistory = localStorage.getItem('weekend_history_pro');
+                    if (savedHistory) this.history = JSON.parse(savedHistory);
+
+                    // 读取状态
+                    const savedStatus = localStorage.getItem('weekend_status_pro');
+                    if (savedStatus) {
+                        this.statusData = JSON.parse(savedStatus);
+                    } else {
+                        this.initializeStatus();
+                    }
+
+                    // 自动保存监听
+                    this.$watch('statusData', (val) => {
+                        localStorage.setItem('weekend_status_pro', JSON.stringify(val));
+                    });
+                },
+
+                updateTime() {
+                    const now = new Date();
+                    this.currentTime = now.toLocaleTimeString('en-US', {hour12: false}); // 24小时制
+                    this.currentDate = now.toLocaleDateString('zh-CN', {month:'long', day:'numeric', weekday:'short'});
+                },
+
+                initializeStatus() {
+                    ['female', 'male'].forEach(type => {
+                        this.dormData[type].forEach(room => {
+                            room.students.forEach(name => {
+                                this.statusData[`${room.id}-${name}`] = 'unknown';
+                            });
+                        });
+                    });
+                },
+
+                // 全局重置（开启新一轮）
+                resetAllData() {
+                    if(confirm('⚠️ 确定要开启新一轮查寝吗？\n\n这将清除当前页面所有学生的状态。')) {
+                        this.initializeStatus(); // 重置内存数据
+                        // 强制更新 UI (Alpine有时需要重赋新对象)
+                        this.statusData = JSON.parse(JSON.stringify(this.statusData));
+                        alert('已重置，可以开始新的查寝了！');
+                    }
+                },
+
+                // 单宿舍清除
+                clearRoom(roomId) {
+                    const room = this.dormData[this.activeTab].find(r => r.id === roomId);
+                    if(room) {
+                        room.students.forEach(name => {
+                            this.statusData[`${roomId}-${name}`] = 'unknown';
+                        });
+                    }
+                },
+
+                // 核心状态切换逻辑
+                toggleStatus(roomId, name) {
+                    const key = `${roomId}-${name}`;
+                    const current = this.statusData[key];
+                    const flow = {
+                        'unknown': 'present',
+                        'present': 'home',
+                        'home': 'late',
+                        'late': 'absent',
+                        'absent': 'leave',
+                        'leave': 'unknown'
+                    };
+                    this.statusData[key] = flow[current] || 'present';
+                },
+
+                markRoomStatus(roomId, targetStatus) {
+                    const room = this.dormData[this.activeTab].find(r => r.id === roomId);
+                    if(room) {
+                        room.students.forEach(name => {
+                            this.statusData[`${roomId}-${name}`] = targetStatus;
+                        });
+                    }
+                },
+
+                // 样式逻辑
+                getStatusClass(status) {
+                    const base = "border-transparent text-gray-400 bg-gray-50"; // unknown
+                    const map = {
+                        'unknown': base,
+                        'present': 'border-green-500 bg-green-50 text-green-700 shadow-sm ring-1 ring-green-100',
+                        'home': 'border-blue-400 bg-blue-50 text-blue-600 opacity-60',
+                        'late': 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm',
+                        'absent': 'border-red-500 bg-red-50 text-red-700 shadow-md animate-pulse',
+                        'leave': 'border-yellow-500 bg-yellow-50 text-yellow-700',
+                    };
+                    return map[status] || base;
+                },
+                
+                getDotClass(status) {
+                    return {
+                        'unknown': 'bg-gray-300', 'present': 'bg-green-500', 'home': 'bg-blue-400',
+                        'late': 'bg-orange-500', 'absent': 'bg-red-500', 'leave': 'bg-yellow-500'
+                    }[status];
+                },
+                getStatusLabel(s) {
+                    return {'unknown':'点击', 'present':'留宿', 'home':'回家', 'late':'晚归', 'absent':'异常', 'leave':'请假'}[s];
+                },
+
+                // 列表生成
+                get activeList() {
+                    return this.dormData[this.activeTab].map(room => ({
+                        id: room.id,
+                        students: room.students.map(name => ({
+                            name: name,
+                            status: this.statusData[`${room.id}-${name}`] || 'unknown'
+                        }))
+                    }));
+                },
+
+                formatName(name) { return name.replace(/[0-9]/g, ''); },
+
+                // 统计
+                get allStudents() {
+                    let all = [];
+                    ['female', 'male'].forEach(t => this.dormData[t].forEach(r => r.students.forEach(n => 
+                        all.push({id: r.id, name: n, status: this.statusData[`${r.id}-${n}`]})
+                    )));
+                    return all;
+                },
+                get stayingCount() { return this.allStudents.filter(s => ['present','late'].includes(s.status)).length; },
+                get homeCount() { return this.allStudents.filter(s => s.status === 'home').length; },
+                get abnormalCount() { return this.allStudents.filter(s => s.status === 'absent').length; },
+
+                // 汇报逻辑
+                copyLeaderReport() {
+                    let text = `【周末查寝汇报】\n📅 ${new Date().toLocaleString('zh-CN', {hour12:false})}\n------------------\n`;
+                    text += `留宿: ${this.stayingCount} | 回家: ${this.homeCount}\n`;
+                    
+                    let abnormals = this.allStudents.filter(s => s.status === 'absent');
+                    let lates = this.allStudents.filter(s => s.status === 'late');
+                    
+                    if(abnormals.length) {
+                        text += `\n❌ 异常/未归:\n` + abnormals.map(s => `${s.id}${this.formatName(s.name)}`).join('、');
+                    }
+                    if(lates.length) {
+                        text += `\n⚠️ 晚归:\n` + lates.map(s => `${s.id}${this.formatName(s.name)}`).join('、');
+                    }
+                    if(!abnormals.length && !lates.length) text += `\n✅ 留宿学生全员在寝。`;
+
+                    this.copyText(text);
+                },
+
+                copyParentReport() {
+                    let text = `【集贤教育】周末留宿名单公示\n📅 ${this.currentDate} ${this.currentTime}\n------------------\n`;
+                    let has = false;
+                    ['female', 'male'].forEach(t => {
+                        let header = t==='female'?'👩 女生':'👨 男生';
+                        let lines = [];
+                        this.dormData[t].forEach(r => {
+                            let stays = r.students.filter(n => ['present','late'].includes(this.statusData[`${r.id}-${n}`]));
+                            if(stays.length) lines.push(`[${r.id}] ${stays.map(n=>this.formatName(n)).join('、')}`);
+                        });
+                        if(lines.length) {
+                            text += `\n${header}:\n${lines.join('\n')}\n`;
+                            has = true;
+                        }
+                    });
+                    if(!has) text += "\n(暂无留宿学生)";
+                    text += `\n注：未在列学生默认为回家/请假。`;
+                    this.copyText(text);
+                },
+
+                copyText(text) {
+                    navigator.clipboard.writeText(text).then(() => alert('已复制内容！')).catch(() => alert('复制失败'));
+                },
+
+                archiveData() {
+                    this.history.unshift({
+                        date: this.currentDate, time: this.currentTime,
+                        report: `留宿:${this.stayingCount} 回家:${this.homeCount} 异常:${this.abnormalCount}`
+                    });
+                    localStorage.setItem('weekend_history_pro', JSON.stringify(this.history));
+                    alert('已归档');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
